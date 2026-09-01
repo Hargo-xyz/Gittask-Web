@@ -1,9 +1,16 @@
 // src/components/CodeEditorPanel.jsx
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import TerminalPanel from './TerminalPanel';
+import Convert from 'ansi-to-html';
+
+// Inisialisasi converter ANSI ke HTML
+const convertAnsi = new Convert({
+  fg: '#c9d1d9',
+  bg: '#0d1117',
+  newline: true,
+  escapeXML: true
+});
 
 export default function CodeEditorPanel({
   width,
@@ -11,19 +18,15 @@ export default function CodeEditorPanel({
   isEditorMaximized,
   setIsEditorMaximized,
   setIsMaterialMaximized,
-  setShowEditor,
   openFiles,
   activeFilePath,
   setActiveFilePath,
   closeFileTab,
-  openFileTab,
-  quizzesList,
   filesContentMap,
   handleCodeChange,
   setShowCreateFileModal,
   showTerminal,
   setIsDraggingTerminal,
-  isContainerReady,
   executeContainerCommand,
   isPushing,
   setShowPushModal,
@@ -34,160 +37,166 @@ export default function CodeEditorPanel({
   terminalInput,
   setTerminalInput,
   handleKeyDownTerminal,
-  isReadOnly,
-  onDeleteFile
+  isReadOnly
 }) {
-  const [isFileTreeDropdownOpen, setIsFileTreeDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  // Tutup dropdown jika mengeklik area di luar dropdown
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsFileTreeDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   return (
     <div 
-      style={{ width: (showMaterial && !isEditorMaximized) ? `${100 - width}%` : '100%' }} 
-      className="flex flex-col bg-[#0d1117] flex-grow min-w-[250px] transition-all duration-75 relative"
+      style={{ width: isEditorMaximized ? '100%' : showMaterial ? `${100 - width}%` : '100%' }}
+      className="bg-[#0d1117] flex flex-col h-full overflow-hidden transition-all duration-150 font-sans"
     >
-      {/* TABS BAR (z-30 agar dropdown melayang di atas editor) */}
-      <div className="h-9 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between px-2 select-none relative z-30">
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          
-          {/* FILE EXPLORER DROPDOWN BUTTON + FLOATING MENU */}
-          <div className="relative flex-shrink-0" ref={dropdownRef}>
-            <button 
-              onClick={() => setIsFileTreeDropdownOpen(!isFileTreeDropdownOpen)}
-              className="flex items-center gap-1.5 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs px-2.5 py-1 rounded text-[#c9d1d9] font-mono transition-colors cursor-pointer"
-              title="Daftar Berkas Repo"
+      {/* EDITOR TAB BAR */}
+      <div className="h-10 bg-[#161b22] border-b border-[#30363d] px-2 flex items-center justify-between select-none shrink-0">
+        <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none py-1">
+          {openFiles.map((path) => (
+            <div
+              key={path}
+              onClick={() => setActiveFilePath(path)}
+              className={`group text-xs px-3 py-1 font-mono flex items-center gap-2 cursor-pointer transition-colors border-b-2 ${
+                activeFilePath === path
+                  ? 'bg-[#0d1117] text-white border-[#58a6ff] font-semibold'
+                  : 'bg-[#161b22] text-[#8b949e] hover:text-white border-transparent'
+              }`}
             >
-              <svg className="w-3.5 h-3.5 text-[#58a6ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              <span className="text-[10px] text-[#8b949e]">▼</span>
-            </button>
-
-            {/* DROPDOWN MENU FLOATING (z-50) */}
-            {isFileTreeDropdownOpen && (
-              <div className="absolute top-9 left-0 w-64 bg-[#161b22] border border-[#30363d] rounded-md shadow-2xl z-50 py-1 font-mono text-xs">
-                <div className="px-3 py-1.5 border-b border-[#30363d] text-[10px] text-[#8b949e] uppercase font-semibold flex justify-between items-center">
-                  <span>Files ({quizzesList.length})</span>
-                  <button onClick={() => setIsFileTreeDropdownOpen(false)} className="text-[#8b949e] hover:text-white cursor-pointer">✕</button>
-                </div>
-                <div className="max-h-60 overflow-y-auto py-1">
-                  {!quizzesList.length ? (
-                    <div className="px-3 py-2 text-[11px] text-[#8b949e]">Tidak ada file code</div>
-                  ) : (
-                    quizzesList.map((fileItem, idx) => (
-                      <div 
-                        key={idx}
-                        className={`px-3 py-1.5 hover:bg-[#21262d] flex items-center justify-between transition-colors group ${
-                          activeFilePath === fileItem.path ? 'bg-[#21262d] text-[#58a6ff] font-medium' : 'text-[#c9d1d9]'
-                        }`}
-                      >
-                        <span 
-                          onClick={() => { openFileTab(fileItem.path); setIsFileTreeDropdownOpen(false); }}
-                          className="truncate cursor-pointer flex-grow hover:text-[#58a6ff]"
-                        >
-                          {fileItem.path}
-                        </span>
-
-                        {!isReadOnly && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); onDeleteFile(fileItem.path); }}
-                            className="opacity-0 group-hover:opacity-100 text-[#8b949e] hover:text-[#f85149] p-1 cursor-pointer transition-opacity ml-2"
-                            title="Hapus File"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* OPEN FILE TABS CONTAINER (DIPISAHKAN DARI DROPDOWN BUTTON) */}
-          <div className="flex items-center overflow-x-auto flex-1 min-w-0">
-            {openFiles.map((filePath) => (
-              <div 
-                key={filePath}
-                onClick={() => setActiveFilePath(filePath)}
-                className={`flex items-center gap-2 px-3 py-1 text-xs font-mono cursor-pointer border-r border-[#30363d] transition-colors whitespace-nowrap flex-shrink-0 ${
-                  activeFilePath === filePath ? 'bg-[#0d1117] text-[#58a6ff] font-medium border-t-2 border-t-[#58a6ff]' : 'bg-[#161b22] text-[#8b949e] hover:bg-[#21262d]'
-                }`}
+              <span>{path.split('/').pop()}</span>
+              <button 
+                onClick={(e) => closeFileTab(e, path)}
+                className="text-[#8b949e] hover:text-white text-[10px] p-0.5 rounded hover:bg-[#21262d]"
               >
-                <span>{filePath}</span>
-                <button onClick={(e) => closeFileTab(e, filePath)} className="hover:text-white text-[10px] ml-1 font-mono cursor-pointer">✕</button>
-              </div>
-            ))}
-          </div>
+                ✕
+              </button>
+            </div>
+          ))}
 
           {!isReadOnly && (
             <button 
               onClick={() => setShowCreateFileModal(true)}
-              className="bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] hover:text-white px-2 py-1 rounded text-xs font-mono border border-[#30363d] transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap"
-              title="Buat File Baru"
+              className="text-xs text-[#58a6ff] hover:text-white font-mono bg-[#21262d] hover:bg-[#30363d] px-2 py-0.5 rounded border border-[#30363d] cursor-pointer ml-1 transition-colors"
             >
               + File
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+        {/* RIGHT CONTROLS */}
+        <div className="flex items-center gap-2 shrink-0">
+          {!isReadOnly && activeFilePath && (
+            <button 
+              onClick={() => setShowPushModal(true)}
+              disabled={isPushing}
+              className="bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#3fb950] hover:text-white text-xs font-mono font-medium px-2.5 py-0.5 rounded transition-colors cursor-pointer"
+            >
+              Commit Push
+            </button>
+          )}
+
           <button 
-            onClick={() => { setIsEditorMaximized(!isEditorMaximized); setIsMaterialMaximized(false); }}
-            className="text-[10px] text-[#8b949e] hover:text-white px-1 font-mono cursor-pointer"
+            onClick={() => {
+              setIsEditorMaximized(!isEditorMaximized);
+              setIsMaterialMaximized(false);
+            }}
+            className="text-[#8b949e] hover:text-white text-xs font-mono p-1 rounded hover:bg-[#21262d] cursor-pointer"
+            title="Maximize Editor"
           >
-            [ ]
-          </button>
-          <button 
-            onClick={() => setShowEditor(false)}
-            className="text-[10px] text-[#8b949e] hover:text-[#f85149] px-1 font-mono cursor-pointer"
-          >
-            ✕
+            {isEditorMaximized ? '❐' : '□'}
           </button>
         </div>
       </div>
 
-      {/* MONACO CODE EDITOR (z-10) */}
-      <div className="flex-grow min-h-0 relative z-10">
-        <Editor 
-          height="100%" 
-          defaultLanguage={activeFilePath.endsWith('.json') ? 'json' : 'javascript'} 
-          theme="vs-dark" 
-          value={filesContentMap[activeFilePath] || ""} 
-          onChange={handleCodeChange} 
-          options={{ readOnly: isReadOnly, minimap: { enabled: false }, fontSize: 13, padding: { top: 10 } }} 
-        />
+      {/* MONACO CODE EDITOR CANVAS */}
+      <div className="flex-grow bg-[#0d1117] relative">
+        {activeFilePath ? (
+          <Editor
+            height="100%"
+            theme="vs-dark"
+            defaultLanguage="javascript"
+            path={activeFilePath}
+            value={filesContentMap[activeFilePath] || ''}
+            onChange={handleCodeChange}
+            options={{
+              fontSize: 13,
+              fontFamily: "'Fira Code', 'Cascadia Code', monospace",
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              readOnly: isReadOnly,
+              padding: { top: 8, bottom: 8 }
+            }}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-[#8b949e] font-mono text-xs italic">
+            Pilih atau buat berkas untuk mulai menulis kode.
+          </div>
+        )}
       </div>
 
-      {/* TERMINAL PANEL */}
-      <TerminalPanel 
-        showTerminal={showTerminal}
-        terminalHeight={terminalHeight}
-        terminalOutput={terminalOutput}
-        terminalBottomRef={terminalBottomRef}
-        terminalInput={terminalInput}
-        setTerminalInput={setTerminalInput}
-        handleTerminalSubmit={handleTerminalSubmit}
-        handleKeyDownTerminal={handleKeyDownTerminal}
-        isContainerReady={isContainerReady}
-        activeFilePath={activeFilePath}
-        executeContainerCommand={executeContainerCommand}
-        isPushing={isPushing}
-        setShowPushModal={setShowPushModal}
-        setIsDraggingTerminal={setIsDraggingTerminal}
-        isReadOnly={isReadOnly}
-      />
+      {/* CUSTOM TERMINAL INTEGRATION WITH ANSI-TO-HTML */}
+      {showTerminal && (
+        <div 
+          style={{ height: `${terminalHeight}px` }}
+          className="bg-[#0d1117] border-t border-[#30363d] flex flex-col font-mono text-xs shrink-0"
+        >
+          {/* DRAG HANDLE */}
+          <div 
+            onMouseDown={() => setIsDraggingTerminal(true)}
+            className="h-1 bg-[#161b22] hover:bg-[#58a6ff] cursor-row-resize"
+          />
+
+          {/* HEADER TERMINAL */}
+          <div className="h-7 bg-[#161b22] px-3 flex items-center justify-between text-[#8b949e] border-b border-[#30363d] select-none">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-[10px] uppercase tracking-wider text-white">Terminal Runtime</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+            </div>
+            <button 
+              onClick={() => executeContainerCommand('clear')}
+              className="hover:text-white text-[10px] cursor-pointer transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+
+          {/* OUTPUT LINES */}
+          <div className="flex-grow p-2.5 overflow-y-auto space-y-1 text-[#c9d1d9] select-text">
+            {terminalOutput.map((out, i) => {
+              if (out.type === 'command') {
+                return (
+                  <div key={i} className="text-[#58a6ff] font-semibold">
+                    {out.text}
+                  </div>
+                );
+              }
+              if (out.type === 'error') {
+                return (
+                  <div key={i} className="text-[#f85149]">
+                    {out.text}
+                  </div>
+                );
+              }
+              // Konversi kode ANSI warna menjadi HTML asli
+              return (
+                <div 
+                  key={i} 
+                  dangerouslySetInnerHTML={{ __html: convertAnsi.toHtml(out.text) }} 
+                />
+              );
+            })}
+            <div ref={terminalBottomRef} />
+          </div>
+
+          {/* INPUT FORM */}
+          <form onSubmit={handleTerminalSubmit} className="p-1.5 bg-[#161b22] border-t border-[#30363d] flex items-center gap-2">
+            <span className="text-[#3fb950] font-bold">$</span>
+            <input 
+              type="text"
+              value={terminalInput}
+              onChange={(e) => setTerminalInput(e.target.value)}
+              onKeyDown={handleKeyDownTerminal}
+              placeholder="Ketik perintah..."
+              className="flex-grow bg-transparent text-white focus:outline-none font-mono text-xs"
+            />
+          </form>
+        </div>
+      )}
     </div>
   );
 }
