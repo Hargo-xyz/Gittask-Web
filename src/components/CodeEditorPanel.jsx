@@ -4,14 +4,6 @@
 import Editor from '@monaco-editor/react';
 import Convert from 'ansi-to-html';
 
-// Inisialisasi converter ANSI ke HTML
-const convertAnsi = new Convert({
-  fg: '#c9d1d9',
-  bg: '#0d1117',
-  newline: true,
-  escapeXML: true
-});
-
 export default function CodeEditorPanel({
   width,
   showMaterial,
@@ -39,6 +31,14 @@ export default function CodeEditorPanel({
   handleKeyDownTerminal,
   isReadOnly
 }) {
+  // Converter di-inisialisasi di dalam komponen agar aman dari SSR Error
+  const convertAnsi = new Convert({
+    fg: '#c9d1d9',
+    bg: '#0d1117',
+    newline: true,
+    escapeXML: true
+  });
+
   return (
     <div 
       style={{ width: isEditorMaximized ? '100%' : showMaterial ? `${100 - width}%` : '100%' }}
@@ -129,7 +129,7 @@ export default function CodeEditorPanel({
         )}
       </div>
 
-      {/* CUSTOM TERMINAL INTEGRATION WITH ANSI-TO-HTML */}
+      {/* TERMINAL INTEGRATION */}
       {showTerminal && (
         <div 
           style={{ height: `${terminalHeight}px` }}
@@ -172,11 +172,10 @@ export default function CodeEditorPanel({
                   </div>
                 );
               }
-              // Konversi kode ANSI warna menjadi HTML asli
               return (
                 <div 
                   key={i} 
-                  dangerouslySetInnerHTML={{ __html: convertAnsi.toHtml(out.text) }} 
+                  dangerouslySetInnerHTML={{ __html: convertAnsi.toHtml(out.text || '') }} 
                 />
               );
             })}

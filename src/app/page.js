@@ -632,13 +632,18 @@ function Workspace() {
             setShowCreateFileModal={setShowCreateFileModal}
             showTerminal={showTerminal}
             setIsDraggingTerminal={setIsDraggingTerminal}
+            executeContainerCommand={executeContainerCommand}
             isPushing={isPushing}
             setShowPushModal={setShowPushModal}
             terminalHeight={terminalHeight}
+            terminalOutput={terminalOutput}
+            terminalBottomRef={terminalBottomRef}
+            handleTerminalSubmit={handleTerminalSubmit}
+            terminalInput={terminalInput}
+            setTerminalInput={setTerminalInput}
+            handleKeyDownTerminal={handleKeyDownTerminal}
             isReadOnly={isReadOnly}
             onDeleteFile={handleDeleteFile}
-            webcontainerRef={webcontainerRef}
-            isContainerReady={isContainerReady}
           />
         )}
       </div>
