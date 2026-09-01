@@ -1,31 +1,34 @@
 // src/app/page.js
-'use client';
+"use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
-import { getWebContainerInstance, buildFileSystemTree } from '../utils/webcontainer';
-import { 
-  fetchRepoTree, 
-  fetchFileContent, 
-  pushCodeToGitHub, 
-  createPullRequest, 
+import {
+  getWebContainerInstance,
+  buildFileSystemTree,
+} from "../utils/webcontainer";
+import {
+  fetchRepoTree,
+  fetchFileContent,
+  pushCodeToGitHub,
+  createPullRequest,
   getUserRepos,
-  verifyCurriculumStatus
-} from '../utils/github';
-import { CURRICULUM_DATA, MENTOR_ORG } from '../data/curriculumData';
+  verifyCurriculumStatus,
+} from "../utils/github";
+import { CURRICULUM_DATA, MENTOR_ORG } from "../data/curriculumData";
 
-import CurriculumDashboard from '../components/CurriculumDashboard';
-import WorkspaceHeader from '../components/WorkspaceHeader';
-import MaterialPanel from '../components/MaterialPanel';
-import CodeEditorPanel from '../components/CodeEditorPanel';
-import Modals from '../components/Modals';
-import LoginPage from '../components/LoginPage';
-import OnboardingTour from '../components/OnboardingTour';
+import CurriculumDashboard from "../components/CurriculumDashboard";
+import WorkspaceHeader from "../components/WorkspaceHeader";
+import MaterialPanel from "../components/MaterialPanel";
+import CodeEditorPanel from "../components/CodeEditorPanel";
+import Modals from "../components/Modals";
+import LoginPage from "../components/LoginPage";
+import OnboardingTour from "../components/OnboardingTour";
 
 function Workspace() {
   const { data: session } = useSession();
 
-  const [currentView, setCurrentView] = useState('dashboard');
+  const [currentView, setCurrentView] = useState("dashboard");
   const [selectedWeekInfo, setSelectedWeekInfo] = useState(null);
   const [isReadOnly, setIsReadOnly] = useState(false);
 
@@ -57,10 +60,12 @@ function Workspace() {
   const [activeFilePath, setActiveFilePath] = useState("");
   const [filesContentMap, setFilesContentMap] = useState({});
 
-  const [materialText, setMaterialText] = useState("# Welcome\nPilih minggu kurikulum untuk mulai.");
+  const [materialText, setMaterialText] = useState(
+    "# Welcome\nPilih minggu kurikulum untuk mulai.",
+  );
   const [previewImage, setPreviewImage] = useState(null);
 
-  const [terminalInput, setTerminalInput] = useState('');
+  const [terminalInput, setTerminalInput] = useState("");
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [terminalOutput, setTerminalOutput] = useState([]);
@@ -79,8 +84,10 @@ function Workspace() {
   const [isPushing, setIsPushing] = useState(false);
   const [isPullRequesting, setIsPullRequesting] = useState(false);
 
-  const showToastNotification = (message, type = 'info') => setToast({ message, type });
-  const appendTerminalOutput = (type, text) => setTerminalOutput(prev => [...prev, { type, text }]);
+  const showToastNotification = (message, type = "info") =>
+    setToast({ message, type });
+  const appendTerminalOutput = (type, text) =>
+    setTerminalOutput((prev) => [...prev, { type, text }]);
 
   useEffect(() => {
     let isMounted = true;
@@ -91,29 +98,41 @@ function Workspace() {
         webcontainerRef.current = instance;
         if (isMounted) {
           setIsContainerReady(true);
-          showToastNotification('Runtime Engine Ready', 'success');
-          instance.on('server-ready', (port, url) => {
+          showToastNotification("Runtime Engine Ready", "success");
+          instance.on("server-ready", (port, url) => {
             setActivePortUrl(url);
-            showToastNotification(`Server running di Port ${port}`, 'success');
+            showToastNotification(`Server running di Port ${port}`, "success");
           });
         }
       } catch (err) {
-        if (isMounted) showToastNotification(`Boot Error: ${err.message}`, 'error');
+        if (isMounted)
+          showToastNotification(`Boot Error: ${err.message}`, "error");
       }
     }
     initContainer();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (session?.accessToken && session?.user?.name && !hasInitialSyncedRef.current) {
+    if (
+      session?.accessToken &&
+      session?.user?.name &&
+      !hasInitialSyncedRef.current
+    ) {
       hasInitialSyncedRef.current = true;
       loadUserReposList();
 
-      const hasSeenTour = localStorage.getItem(`gittask_tour_${session.user.name.toLowerCase()}`);
+      const hasSeenTour = localStorage.getItem(
+        `gittask_tour_${session.user.name.toLowerCase()}`,
+      );
       if (!hasSeenTour) {
         setIsTourOpen(true);
-        localStorage.setItem(`gittask_tour_${session.user.name.toLowerCase()}`, 'true');
+        localStorage.setItem(
+          `gittask_tour_${session.user.name.toLowerCase()}`,
+          "true",
+        );
       }
     }
   }, [session]);
@@ -126,13 +145,15 @@ function Workspace() {
     const userRepos = userReposRes.repos || [];
 
     const allWeeks = [];
-    CURRICULUM_DATA.forEach(group => group.weeks.forEach(w => allWeeks.push(w)));
+    CURRICULUM_DATA.forEach((group) =>
+      group.weeks.forEach((w) => allWeeks.push(w)),
+    );
 
     const verifiedMap = await verifyCurriculumStatus(
       session.accessToken,
       session.user.name,
       allWeeks,
-      userRepos
+      userRepos,
     );
 
     setStatusMap(verifiedMap);
@@ -140,7 +161,8 @@ function Workspace() {
   };
 
   useEffect(() => {
-    if (showTerminal) terminalBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (showTerminal)
+      terminalBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [terminalOutput, showTerminal]);
 
   useEffect(() => {
@@ -158,36 +180,46 @@ function Workspace() {
       }
       if (isDraggingTerminal) {
         const calculatedHeight = window.innerHeight - e.clientY - 24;
-        if (calculatedHeight >= 50 && calculatedHeight <= window.innerHeight - 100) setTerminalHeight(calculatedHeight);
+        if (
+          calculatedHeight >= 50 &&
+          calculatedHeight <= window.innerHeight - 100
+        )
+          setTerminalHeight(calculatedHeight);
       }
     };
-    const handleMouseUp = () => { setIsDraggingWidth(false); setIsDraggingTerminal(false); };
+    const handleMouseUp = () => {
+      setIsDraggingWidth(false);
+      setIsDraggingTerminal(false);
+    };
     if (isDraggingWidth || isDraggingTerminal) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
     }
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isDraggingWidth, isDraggingTerminal]);
 
   const handleDeleteFile = async (filePath) => {
     if (isReadOnly) {
-      showToastNotification("Read-Only mode tidak dapat menghapus file.", "error");
+      showToastNotification(
+        "Read-Only mode tidak dapat menghapus file.",
+        "error",
+      );
       return;
     }
     if (!filePath || !confirm(`Hapus file '${filePath}'?`)) return;
 
-    setFilesContentMap(prev => {
+    setFilesContentMap((prev) => {
       const next = { ...prev };
       delete next[filePath];
       return next;
     });
 
-    setQuizzesList(prev => prev.filter(q => q.path !== filePath));
-    
-    const remainingOpen = openFiles.filter(p => p !== filePath);
+    setQuizzesList((prev) => prev.filter((q) => q.path !== filePath));
+
+    const remainingOpen = openFiles.filter((p) => p !== filePath);
     setOpenFiles(remainingOpen);
     if (activeFilePath === filePath) {
       setActiveFilePath(remainingOpen[remainingOpen.length - 1] || "");
@@ -197,25 +229,33 @@ function Workspace() {
       try {
         await webcontainerRef.current.fs.rm(filePath, { recursive: true });
       } catch (err) {
-        console.error('WebContainer RM Error:', err);
+        console.error("WebContainer RM Error:", err);
       }
     }
 
-    showToastNotification(`File '${filePath}' dihapus.`, 'success');
+    showToastNotification(`File '${filePath}' dihapus.`, "success");
   };
 
-  const handleSelectWeekRepo = async (weekItem, readOnlyMode = false, overrideRepoName = "") => {
+  const handleSelectWeekRepo = async (
+    weekItem,
+    readOnlyMode = false,
+    overrideRepoName = "",
+  ) => {
     setSelectedWeekInfo(weekItem);
     setIsReadOnly(readOnlyMode);
 
     const repoName = overrideRepoName || weekItem.repoName;
     setSelectedRepo(repoName);
-    setCurrentView('workspace');
+    setCurrentView("workspace");
 
     const targetOwner = readOnlyMode ? MENTOR_ORG : session.user.name;
-    showToastNotification(`Memuat repo ${targetOwner}/${repoName}...`, 'info');
-    
-    const treeRes = await fetchRepoTree(session.accessToken, targetOwner, repoName);
+    showToastNotification(`Memuat repo ${targetOwner}/${repoName}...`, "info");
+
+    const treeRes = await fetchRepoTree(
+      session.accessToken,
+      targetOwner,
+      repoName,
+    );
 
     if (treeRes.success) {
       setMaterialsList(treeRes.materials);
@@ -230,7 +270,12 @@ function Workspace() {
       const loadedFilesMap = {};
       if (treeRes.quizzes.length > 0) {
         for (const quiz of treeRes.quizzes) {
-          const fileRes = await fetchFileContent(session.accessToken, targetOwner, repoName, quiz.path);
+          const fileRes = await fetchFileContent(
+            session.accessToken,
+            targetOwner,
+            repoName,
+            quiz.path,
+          );
           if (fileRes.success) loadedFilesMap[quiz.path] = fileRes.content;
         }
         setQuizzesList(treeRes.quizzes);
@@ -247,19 +292,27 @@ function Workspace() {
         try {
           const fileTree = buildFileSystemTree(loadedFilesMap);
           await webcontainerRef.current.mount(fileTree);
-          showToastNotification(`Files ${repoName} berhasil di-mount`, 'success');
+          showToastNotification(
+            `Files ${repoName} berhasil di-mount`,
+            "success",
+          );
         } catch (mErr) {
-          showToastNotification(`Mount Error: ${mErr.message}`, 'error');
+          showToastNotification(`Mount Error: ${mErr.message}`, "error");
         }
       }
     } else {
-      showToastNotification(`Gagal memuat repo: ${treeRes.message}`, 'error');
+      showToastNotification(`Gagal memuat repo: ${treeRes.message}`, "error");
     }
   };
 
   const loadMaterial = async (owner, repoName, path) => {
     setIsLoadingMaterial(true);
-    const res = await fetchFileContent(session.accessToken, owner, repoName, path);
+    const res = await fetchFileContent(
+      session.accessToken,
+      owner,
+      repoName,
+      path,
+    );
     if (res.success) setMaterialText(res.content);
     setIsLoadingMaterial(false);
   };
@@ -273,47 +326,52 @@ function Workspace() {
   const handleCreateFileSubmit = async (e) => {
     e.preventDefault();
     if (isReadOnly) {
-      showToastNotification("Read-Only mode tidak dapat membuat file.", "error");
+      showToastNotification(
+        "Read-Only mode tidak dapat membuat file.",
+        "error",
+      );
       return;
     }
     const cleanPath = newFilePathInput.trim();
     if (!cleanPath) return;
 
     if (filesContentMap[cleanPath] !== undefined) {
-      showToastNotification(`File ${cleanPath} sudah ada.`, 'error');
+      showToastNotification(`File ${cleanPath} sudah ada.`, "error");
       return;
     }
 
-    const defaultContent = cleanPath.endsWith('.json') ? '{\n  \n}' : '// JavaScript File\n';
-    setFilesContentMap(prev => ({ ...prev, [cleanPath]: defaultContent }));
-    setQuizzesList(prev => [...prev, { path: cleanPath, label: cleanPath }]);
+    const defaultContent = cleanPath.endsWith(".json")
+      ? "{\n  \n}"
+      : "// JavaScript File\n";
+    setFilesContentMap((prev) => ({ ...prev, [cleanPath]: defaultContent }));
+    setQuizzesList((prev) => [...prev, { path: cleanPath, label: cleanPath }]);
 
     if (webcontainerRef.current) {
       try {
-        if (cleanPath.includes('/')) {
-          const dirPath = cleanPath.substring(0, cleanPath.lastIndexOf('/'));
+        if (cleanPath.includes("/")) {
+          const dirPath = cleanPath.substring(0, cleanPath.lastIndexOf("/"));
           await webcontainerRef.current.fs.mkdir(dirPath, { recursive: true });
         }
         await webcontainerRef.current.fs.writeFile(cleanPath, defaultContent);
       } catch (err) {
-        showToastNotification(`FS Error: ${err.message}`, 'error');
+        showToastNotification(`FS Error: ${err.message}`, "error");
       }
     }
 
     openFileTab(cleanPath);
     setShowCreateFileModal(false);
-    setNewFilePathInput('');
-    showToastNotification(`File '${cleanPath}' dibuat.`, 'success');
+    setNewFilePathInput("");
+    showToastNotification(`File '${cleanPath}' dibuat.`, "success");
   };
 
   const handleCodeChange = async (newContent) => {
     const content = newContent || "";
-    setFilesContentMap(prev => ({ ...prev, [activeFilePath]: content }));
+    setFilesContentMap((prev) => ({ ...prev, [activeFilePath]: content }));
     if (webcontainerRef.current && activeFilePath) {
       try {
         await webcontainerRef.current.fs.writeFile(activeFilePath, content);
       } catch (err) {
-        console.error('File sync error:', err);
+        console.error("File sync error:", err);
       }
     }
   };
@@ -325,33 +383,41 @@ function Workspace() {
 
   const closeFileTab = (e, path) => {
     e.stopPropagation();
-    const filtered = openFiles.filter(p => p !== path);
+    const filtered = openFiles.filter((p) => p !== path);
     setOpenFiles(filtered);
-    if (activeFilePath === path) setActiveFilePath(filtered[filtered.length - 1] || "");
+    if (activeFilePath === path)
+      setActiveFilePath(filtered[filtered.length - 1] || "");
   };
 
   const executeContainerCommand = async (commandLine) => {
     if (!webcontainerRef.current || !isContainerReady) {
-      showToastNotification('WebContainer engine belum siap...', 'info');
+      showToastNotification("WebContainer engine belum siap...", "info");
       return;
     }
     const args = commandLine.trim().split(/\s+/);
     const cmd = args.shift();
     if (!cmd) return;
 
-    appendTerminalOutput('command', `$ ${commandLine}`);
-    if (cmd === 'clear' || cmd === 'cls') {
+    appendTerminalOutput("command", `$ ${commandLine}`);
+    if (cmd === "clear" || cmd === "cls") {
       setTerminalOutput([]);
       return;
     }
 
     try {
       const process = await webcontainerRef.current.spawn(cmd, args);
-      process.output.pipeTo(new WritableStream({ write(data) { appendTerminalOutput('output', data); } }));
+      process.output.pipeTo(
+        new WritableStream({
+          write(data) {
+            appendTerminalOutput("output", data);
+          },
+        }),
+      );
       const exitCode = await process.exit;
-      if (exitCode !== 0) appendTerminalOutput('error', `Exited with code ${exitCode}`);
+      if (exitCode !== 0)
+        appendTerminalOutput("error", `Exited with code ${exitCode}`);
     } catch (err) {
-      appendTerminalOutput('error', `Spawn Error: ${err.message}`);
+      appendTerminalOutput("error", `Spawn Error: ${err.message}`);
     }
   };
 
@@ -359,29 +425,36 @@ function Workspace() {
     e.preventDefault();
     const rawCmd = terminalInput.trim();
     if (!rawCmd) return;
-    setCommandHistory(prev => [...prev, rawCmd]);
+    setCommandHistory((prev) => [...prev, rawCmd]);
     setHistoryIndex(-1);
-    setTerminalInput('');
+    setTerminalInput("");
     executeContainerCommand(rawCmd);
   };
 
   const handleKeyDownTerminal = (e) => {
-    if (e.key === 'ArrowUp') {
+    if (e.key === "ArrowUp") {
       e.preventDefault();
       if (commandHistory.length > 0) {
-        const nextIdx = historyIndex + 1 < commandHistory.length ? historyIndex + 1 : historyIndex;
+        const nextIdx =
+          historyIndex + 1 < commandHistory.length
+            ? historyIndex + 1
+            : historyIndex;
         setHistoryIndex(nextIdx);
-        setTerminalInput(commandHistory[commandHistory.length - 1 - nextIdx] || '');
+        setTerminalInput(
+          commandHistory[commandHistory.length - 1 - nextIdx] || "",
+        );
       }
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       if (historyIndex > 0) {
         const nextIdx = historyIndex - 1;
         setHistoryIndex(nextIdx);
-        setTerminalInput(commandHistory[commandHistory.length - 1 - nextIdx] || '');
+        setTerminalInput(
+          commandHistory[commandHistory.length - 1 - nextIdx] || "",
+        );
       } else if (historyIndex === 0) {
         setHistoryIndex(-1);
-        setTerminalInput('');
+        setTerminalInput("");
       }
     }
   };
@@ -395,17 +468,24 @@ function Workspace() {
     setShowPushModal(false);
     setIsPushing(true);
     const msg = commitMessageInput.trim() || `update ${activeFilePath}`;
-    showToastNotification(`Pushing commit "${msg}"...`, 'info');
+    showToastNotification(`Pushing commit "${msg}"...`, "info");
     try {
       const codeToPush = filesContentMap[activeFilePath] || "";
-      const pushResult = await pushCodeToGitHub(session.accessToken, session.user.name, selectedRepo, activeFilePath, codeToPush, msg);
+      const pushResult = await pushCodeToGitHub(
+        session.accessToken,
+        session.user.name,
+        selectedRepo,
+        activeFilePath,
+        codeToPush,
+        msg,
+      );
       if (pushResult.success) {
-        showToastNotification(`Commit berhasil di-push ke GitHub.`, 'success');
+        showToastNotification(`Commit berhasil di-push ke GitHub.`, "success");
       } else {
-        showToastNotification(`Push gagal: ${pushResult.message}`, 'error');
+        showToastNotification(`Push gagal: ${pushResult.message}`, "error");
       }
     } catch (err) {
-       showToastNotification(`Error: ${err.message}`, 'error');
+      showToastNotification(`Error: ${err.message}`, "error");
     }
     setIsPushing(false);
     setCommitMessageInput("");
@@ -418,16 +498,24 @@ function Workspace() {
     }
     setShowPRModal(false);
     setIsPullRequesting(true);
-    showToastNotification('Mengirim Pull Request...', 'info');
+    showToastNotification("Mengirim Pull Request...", "info");
     try {
-      const prResult = await createPullRequest(session.accessToken, session.user.name, selectedRepo, prNoteInput.trim());
+      const prResult = await createPullRequest(
+        session.accessToken,
+        session.user.name,
+        selectedRepo,
+        prNoteInput.trim(),
+      );
       if (prResult.success) {
-        showToastNotification(`Pull Request terkirim ke @${prResult.mentor}.`, 'success');
+        showToastNotification(
+          `Pull Request terkirim ke @${prResult.mentor}.`,
+          "success",
+        );
       } else {
-        showToastNotification(`PR gagal: ${prResult.message}`, 'error');
+        showToastNotification(`PR gagal: ${prResult.message}`, "error");
       }
     } catch (err) {
-       showToastNotification(`Error: ${err.message}`, 'error');
+      showToastNotification(`Error: ${err.message}`, "error");
     }
     setIsPullRequesting(false);
     setPrNoteInput("");
@@ -437,10 +525,10 @@ function Workspace() {
     return <LoginPage />;
   }
 
-  if (currentView === 'dashboard') {
+  if (currentView === "dashboard") {
     return (
-      <CurriculumDashboard 
-        session={session} 
+      <CurriculumDashboard
+        session={session}
         statusMap={statusMap}
         isLoadingRepos={isLoadingRepos}
         onSelectWeekRepo={handleSelectWeekRepo}
@@ -452,24 +540,37 @@ function Workspace() {
   const isAnyDragging = isDraggingWidth || isDraggingTerminal;
 
   return (
-    <div className={`flex flex-col h-screen bg-[#0d1117] text-[#c9d1d9] font-sans ${isAnyDragging ? 'select-none' : ''}`}>
-      {isAnyDragging && <div className={`fixed inset-0 z-50 ${isDraggingWidth ? 'cursor-col-resize' : 'cursor-row-resize'}`} />}
+    <div
+      className={`flex flex-col h-screen bg-[#0d1117] text-[#c9d1d9] font-sans ${isAnyDragging ? "select-none" : ""}`}
+    >
+      {isAnyDragging && (
+        <div
+          className={`fixed inset-0 z-50 ${isDraggingWidth ? "cursor-col-resize" : "cursor-row-resize"}`}
+        />
+      )}
 
       {toast && (
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2.5 bg-[#161b22] border border-[#30363d] text-xs px-3.5 py-2 rounded-md shadow-2xl select-none">
-          <span className={`w-2 h-2 rounded-full ${toast.type === 'error' ? 'bg-[#f85149]' : toast.type === 'success' ? 'bg-[#3fb950]' : 'bg-[#58a6ff]'}`} />
+          <span
+            className={`w-2 h-2 rounded-full ${toast.type === "error" ? "bg-[#f85149]" : toast.type === "success" ? "bg-[#3fb950]" : "bg-[#58a6ff]"}`}
+          />
           <span className="text-white font-medium">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-[#8b949e] hover:text-white ml-2 cursor-pointer">✕</button>
+          <button
+            onClick={() => setToast(null)}
+            className="text-[#8b949e] hover:text-white ml-2 cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      <WorkspaceHeader 
+      <WorkspaceHeader
         selectedWeekInfo={selectedWeekInfo}
         selectedRepo={selectedRepo}
         isReadOnly={isReadOnly}
         activePortUrl={activePortUrl}
         isPullRequesting={isPullRequesting}
-        onBackToCurriculum={() => setCurrentView('dashboard')}
+        onBackToCurriculum={() => setCurrentView("dashboard")}
         onOpenPRModal={() => setShowPRModal(true)}
         session={session}
         showMaterial={showMaterial}
@@ -482,7 +583,7 @@ function Workspace() {
 
       <div className="flex flex-col md:flex-row flex-grow overflow-hidden relative">
         {showMaterial && !isEditorMaximized && (
-          <MaterialPanel 
+          <MaterialPanel
             width={leftWidth}
             showEditor={showEditor}
             isMaterialMaximized={isMaterialMaximized}
@@ -502,12 +603,18 @@ function Workspace() {
           />
         )}
 
-        {showMaterial && showEditor && !isMaterialMaximized && !isEditorMaximized && (
-          <div onMouseDown={() => setIsDraggingWidth(true)} className="hidden md:block w-1 bg-[#161b22] hover:bg-[#58a6ff] cursor-col-resize z-10" />
-        )}
+        {showMaterial &&
+          showEditor &&
+          !isMaterialMaximized &&
+          !isEditorMaximized && (
+            <div
+              onMouseDown={() => setIsDraggingWidth(true)}
+              className="hidden md:block w-1 bg-[#161b22] hover:bg-[#58a6ff] cursor-col-resize z-10"
+            />
+          )}
 
         {showEditor && !isMaterialMaximized && (
-          <CodeEditorPanel 
+          <CodeEditorPanel
             width={leftWidth}
             showMaterial={showMaterial}
             isEditorMaximized={isEditorMaximized}
@@ -525,24 +632,18 @@ function Workspace() {
             setShowCreateFileModal={setShowCreateFileModal}
             showTerminal={showTerminal}
             setIsDraggingTerminal={setIsDraggingTerminal}
-            isContainerReady={isContainerReady}
-            executeContainerCommand={executeContainerCommand}
             isPushing={isPushing}
             setShowPushModal={setShowPushModal}
             terminalHeight={terminalHeight}
-            terminalOutput={terminalOutput}
-            terminalBottomRef={terminalBottomRef}
-            handleTerminalSubmit={handleTerminalSubmit}
-            terminalInput={terminalInput}
-            setTerminalInput={setTerminalInput}
-            handleKeyDownTerminal={handleKeyDownTerminal}
             isReadOnly={isReadOnly}
             onDeleteFile={handleDeleteFile}
+            webcontainerRef={webcontainerRef}
+            isContainerReady={isContainerReady}
           />
         )}
       </div>
 
-      <Modals 
+      <Modals
         showCreateFileModal={showCreateFileModal}
         setShowCreateFileModal={setShowCreateFileModal}
         newFilePathInput={newFilePathInput}
@@ -563,7 +664,7 @@ function Workspace() {
         setPreviewImage={setPreviewImage}
       />
 
-      <OnboardingTour 
+      <OnboardingTour
         isOpen={isTourOpen}
         onClose={() => setIsTourOpen(false)}
       />
