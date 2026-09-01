@@ -1,182 +1,198 @@
 // src/utils/github.js
-import { Octokit } from "octokit";
 
-export const getUserRepos = async (accessToken) => {
-  const octokit = new Octokit({ auth: accessToken });
+export function normalizeName(str = '') {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Ambil hingga 200 repositori user secara paralel (Page 1 & 2)
+export async function getUserRepos(accessToken) {
   try {
-    const res = await octokit.rest.repos.listForAuthenticatedUser({ sort: 'updated', per_page: 50 });
-    return { success: true, repos: res.data };
-  } catch (error) {
-    return { success: false, message: error.message };
+    const [p1, p2] = await Promise.all([
+      fetch('https://api.github.com/user/repos?per_page=100&page=1&sort=updated&type=all', {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
+      }),
+      fetch('https://api.github.com/user/repos?per_page=100&page=2&sort=updated&type=all', {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
+      }),
+    ]);
+
+    const d1 = p1.ok ? await p1.json() : [];
+    const d2 = p2.ok ? await p2.json() : [];
+
+    const allRepos = [...(Array.isArray(d1) ? d1 : []), ...(Array.isArray(d2) ? d2 : [])];
+    return { success: true, repos: allRepos };
+  } catch (err) {
+    return { success: false, repos: [] };
   }
-};
+}
 
-export const fetchRepoTree = async (accessToken, repoOwner, repoName) => {
-  const octokit = new Octokit({ auth: accessToken });
+// Verifikasi Seluruh Repositori Kurikulum secara PARALEL (Super Cepat < 1 detik)
+export async function verifyCurriculumStatus(accessToken, username, targetWeeks, userRepos = []) {
+  const statusMap = {};
+  const lowerUser = (username || '').toLowerCase();
+  const mentorOrg = "Ethereum-Jakarta";
+
+  await Promise.all(
+    targetWeeks.map(async (week) => {
+      const targetRepo = week.repoName;
+      const normTarget = normalizeName(targetRepo);
+
+      // 1. Pencocokan Cepat dari Array User Repos
+      const localMatch = userRepos.find(r => {
+        const rNorm = normalizeName(r.name);
+        if (rNorm === normTarget) return true;
+        
+        // Cek jika mengandung nama repo target & nomor week cocok
+        if (rNorm.includes(normTarget) || normTarget.includes(rNorm)) {
+          const wId = week.id; // contoh "p1-w2"
+          const parts = wId.split('-');
+          const wNum = parts[1]?.replace('w', '');
+          const rLower = r.name.toLowerCase();
+          if (wNum && (rLower.includes(`week${wNum}`) || rLower.includes(`w${wNum}`))) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (localMatch) {
+        statusMap[targetRepo] = { isForked: true, repoName: localMatch.name };
+        return;
+      }
+
+      // 2. Direct API Check paralel (Pengecekan langsung ke akun user)
+      try {
+        const directRes = await fetch(`https://api.github.com/repos/${username}/${targetRepo}`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
+        });
+        if (directRes.status === 200) {
+          statusMap[targetRepo] = { isForked: true, repoName: targetRepo };
+          return;
+        }
+      } catch (e) {}
+
+      // 3. Direct API Check paralel ke Daftar Fork Repo Mentor
+      try {
+        const forksRes = await fetch(`https://api.github.com/repos/${mentorOrg}/${targetRepo}/forks?per_page=100`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
+        });
+        if (forksRes.ok) {
+          const forksData = await forksRes.json();
+          if (Array.isArray(forksData)) {
+            const userFork = forksData.find(f => f.owner && f.owner.login.toLowerCase() === lowerUser);
+            if (userFork) {
+              statusMap[targetRepo] = { isForked: true, repoName: userFork.name };
+              return;
+            }
+          }
+        }
+      } catch (e) {}
+
+      statusMap[targetRepo] = { isForked: false, repoName: targetRepo };
+    })
+  );
+
+  return statusMap;
+}
+
+export async function fetchRepoTree(accessToken, owner, repo) {
   try {
-    const repoInfo = await octokit.rest.repos.get({ owner: repoOwner, repo: repoName });
-    const defaultBranch = repoInfo.data.default_branch;
-
-    const treeRes = await octokit.rest.git.getTree({
-      owner: repoOwner,
-      repo: repoName,
-      tree_sha: defaultBranch,
-      recursive: "true",
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
     });
+    let data = await res.json();
+
+    if (!res.ok) {
+      const fallback = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
+      });
+      data = await fallback.json();
+      if (!fallback.ok) return { success: false, message: data.message };
+    }
 
     const materials = [];
     const quizzes = [];
 
-    treeRes.data.tree.forEach((item) => {
-      if (item.type === "blob") {
-        const lowerPath = item.path.toLowerCase();
-        if (lowerPath.endsWith(".md")) {
-          materials.push({
-            name: item.path,
-            path: item.path,
-            label: item.path.replace(/\/README\.md$/i, '').replace(/README\.md$/i, 'Utama (Root)'),
-          });
-        } 
-        else if (lowerPath.endsWith(".js") && !lowerPath.includes("node_modules")) {
-          quizzes.push({
-            name: item.path.split('/').pop(),
-            path: item.path,
-            label: item.path,
-          });
-        }
+    (data.tree || []).forEach((item) => {
+      if (item.type === 'blob') {
+        if (item.path.endsWith('.md')) materials.push({ path: item.path, label: item.path });
+        else if (item.path.endsWith('.js') || item.path.endsWith('.json')) quizzes.push({ path: item.path, label: item.path });
       }
     });
 
     return { success: true, materials, quizzes };
-  } catch (error) {
-    return { success: false, message: error.message };
+  } catch (err) {
+    return { success: false, message: err.message };
   }
-};
+}
 
-export const fetchFileContent = async (accessToken, repoOwner, repoName, filePath) => {
-  const octokit = new Octokit({ auth: accessToken });
+export async function fetchFileContent(accessToken, owner, repo, path) {
   try {
-    const res = await octokit.rest.repos.getContent({
-      owner: repoOwner,
-      repo: repoName,
-      path: filePath,
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
     });
-    const content = decodeURIComponent(escape(atob(res.data.content)));
-    return { success: true, content };
-  } catch (error) {
-    return { success: false, message: error.message };
+    const data = await res.json();
+    if (res.ok) {
+      const content = decodeURIComponent(escape(atob(data.content.replace(/\s/g, ''))));
+      return { success: true, content, sha: data.sha };
+    }
+    return { success: false, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
   }
-};
+}
 
-// Push dengan Custom Commit Message
-export const pushCodeToGitHub = async (accessToken, repoOwner, repoName, fullFilePath, codeContent, customCommitMsg) => {
-  const octokit = new Octokit({ auth: accessToken });
+export async function pushCodeToGitHub(accessToken, owner, repo, path, content, commitMessage) {
   try {
-    let fileSha = undefined;
-    try {
-      const { data } = await octokit.rest.repos.getContent({
-        owner: repoOwner,
-        repo: repoName,
-        path: fullFilePath,
-      });
-      fileSha = data.sha;
-    } catch (error) {
-      console.log("File baru akan dibuat:", fullFilePath);
-    }
+    const currentFile = await fetchFileContent(accessToken, owner, repo, path);
+    const sha = currentFile.success ? currentFile.sha : undefined;
 
-    const commitMessage = customCommitMsg || `feat: update ${fullFilePath} via GitTask`;
-
-    const response = await octokit.rest.repos.createOrUpdateFileContents({
-      owner: repoOwner,
-      repo: repoName,
-      path: fullFilePath,
-      message: commitMessage,
-      content: btoa(codeContent),
-      sha: fileSha,
-    });
-
-    return { success: true, url: response.data.content.html_url };
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
-};
-
-// Pull Request dengan Custom Catatan Siswa
-export const createPullRequest = async (accessToken, studentUsername, repoName, prNote = "") => {
-  const octokit = new Octokit({ auth: accessToken });
-
-  try {
-    const repoInfo = await octokit.rest.repos.get({
-      owner: studentUsername,
-      repo: repoName,
-    });
-
-    if (!repoInfo.data.fork || !repoInfo.data.parent) {
-      return { 
-        success: false, 
-        message: "Repository ini bukan hasil fork. Tidak dapat mengirim Pull Request ke mentor." 
-      };
-    }
-
-    const mentorUsername = repoInfo.data.parent.owner.login;
-    const mentorRepoName = repoInfo.data.parent.name; 
-    const mentorDefaultBranch = repoInfo.data.parent.default_branch || 'main';
-    const studentBranch = repoInfo.data.default_branch || 'main';
-
-    let existingPR = null;
-    try {
-      const existingPulls = await octokit.rest.pulls.list({
-        owner: mentorUsername,
-        repo: mentorRepoName,
-        head: `${studentUsername}:${studentBranch}`,
-        state: 'open',
-      });
-      if (existingPulls.data.length > 0) {
-        existingPR = existingPulls.data[0];
-      }
-    } catch (e) {
-      console.warn("Mencoba membuat PR baru...", e);
-    }
-
-    const timeStamp = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
-    const noteText = prNote ? `\n\n**Catatan Siswa:**\n> ${prNote}` : '';
-
-    if (existingPR) {
-      const updatedPR = await octokit.rest.pulls.update({
-        owner: mentorUsername,
-        repo: mentorRepoName,
-        pull_number: existingPR.number,
-        title: `[UPDATED] Tugas Selesai: ${studentUsername}`,
-        body: `Tugas diperbarui oleh @${studentUsername} via GitTask Web pada ${timeStamp}.${noteText}`
-      });
-
-      return { 
-        success: true, 
-        isUpdate: true, 
-        mentor: mentorUsername,
-        prNumber: existingPR.number,
-        url: updatedPR.data.html_url 
-      };
-    } 
-
-    const response = await octokit.rest.pulls.create({
-      owner: mentorUsername,
-      repo: mentorRepoName,
-      title: `Tugas Selesai: ${studentUsername}`,
-      head: `${studentUsername}:${studentBranch}`,
-      base: mentorDefaultBranch,
-      body: `Tugas diselesaikan oleh @${studentUsername} melalui GitTask Web.${noteText}`
-    });
-
-    return { 
-      success: true, 
-      isUpdate: false, 
-      mentor: mentorUsername,
-      url: response.data.html_url 
+    const body = {
+      message: commitMessage || `update ${path}`,
+      content: btoa(unescape(encodeURIComponent(content))),
+      ...(sha && { sha }),
     };
 
-  } catch (error) {
-    console.error("Gagal buat/update PR:", error);
-    return { success: false, message: error.message };
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    return res.ok ? { success: true, data } : { success: false, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
   }
-};
+}
+
+export async function createPullRequest(accessToken, username, repoName, note) {
+  try {
+    const mentorOrg = "Ethereum-Jakarta";
+    const body = {
+      title: `[TUGAS] ${repoName} - @${username}`,
+      head: `${username}:main`,
+      base: 'main',
+      body: note || `Tugas ${repoName} diselesaikan oleh @${username}.`,
+    };
+
+    const res = await fetch(`https://api.github.com/repos/${mentorOrg}/${repoName}/pulls`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    return res.ok ? { success: true, url: data.html_url, mentor: mentorOrg } : { success: false, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
