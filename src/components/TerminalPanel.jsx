@@ -14,7 +14,6 @@ export default function TerminalPanel({ webcontainerRef, isContainerReady }) {
   useEffect(() => {
     if (!terminalRef.current || xtermInstance.current) return;
 
-    // Inisialisasi Terminal XTerm
     const term = new Terminal({
       theme: {
         background: '#0d1117',
@@ -41,10 +40,8 @@ export default function TerminalPanel({ webcontainerRef, isContainerReady }) {
     fitAddon.fit();
 
     xtermInstance.current = term;
-
     term.write('\x1b[32m$ \x1b[0m');
 
-    // Menangani Input Keyboard
     term.onData(async (data) => {
       const code = data.charCodeAt(0);
 
@@ -103,7 +100,31 @@ export default function TerminalPanel({ webcontainerRef, isContainerReady }) {
     }
   };
 
+  const handleClear = () => {
+    if (xtermInstance.current) {
+      xtermInstance.current.clear();
+      xtermInstance.current.write('\x1b[32m$ \x1b[0m');
+    }
+  };
+
   return (
-    <div className="w-full h-full bg-[#0d1117] p-2 overflow-hidden" ref={terminalRef} />
+    <div className="flex flex-col h-full w-full bg-[#0d1117] overflow-hidden">
+      {/* HEADER BAR TERMINAL */}
+      <div className="h-7 bg-[#161b22] px-3 flex items-center justify-between text-[#8b949e] border-b border-[#30363d] select-none shrink-0 font-mono">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-[10px] uppercase tracking-wider text-white">Terminal Runtime</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
+        </div>
+        <button 
+          onClick={handleClear}
+          className="hover:text-white text-[10px] cursor-pointer transition-colors"
+        >
+          Clear
+        </button>
+      </div>
+
+      {/* CANVAS TERMINAL XTERM */}
+      <div className="flex-grow w-full h-full p-1 overflow-hidden" ref={terminalRef} />
+    </div>
   );
 }
