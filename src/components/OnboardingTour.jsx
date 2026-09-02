@@ -3,125 +3,181 @@
 
 import { useState, useEffect } from 'react';
 
-const TOUR_STEPS = [
+const STEPS = [
   {
-    target: 'material-panel',
-    title: '1. Material Explorer',
-    description: 'Di panel ini kamu bisa membaca dokumentasi, modul teori, serta menavigasi struktur folder tugas.',
-    position: 'bottom-left'
+    target: '[data-tour="header"]',
+    title: 'Navigasi & Akun Header',
+    description: 'Bilah utama untuk navigasi kembali ke Dashboard kurikulum, mengganti akun GitHub, serta memantau koneksi Port server.',
+    position: 'bottom'
   },
   {
-    target: 'code-editor',
-    title: '2. Code Editor (Monaco)',
-    description: 'Tempat kamu menuliskan logika program JavaScript/JSON. Mendukung auto-complete dan error syntax checking.',
-    position: 'top-center'
+    target: '[data-tour="activity-bar"]',
+    title: 'Activity Bar',
+    description: 'Navigasi cepat ala VS Code. Beralih instan antara File Explorer proyek dan Repositori Materi Pembelajaran.',
+    position: 'right'
   },
   {
-    target: 'terminal-panel',
-    title: '3. WebContainer Terminal',
-    description: 'Jalankan kodinganmu secara real-time menggunakan perintah node atau npm langsung di dalam browser.',
-    position: 'top-right'
+    target: '[data-tour="sidebar-content"]',
+    title: 'Explorer & Modul Pembelajaran',
+    description: 'Di panel ini kamu bisa melihat struktur berkas proyek bertingkat, membuat file/folder baru, serta membaca materi berformat Markdown.',
+    position: 'right'
   },
   {
-    target: 'git-controls',
-    title: '4. Push & PR Controller',
-    description: 'Jika tugas sudah selesai, push commit kamu langsung ke GitHub dan kirim Pull Request ke mentor.',
-    position: 'bottom-right'
+    target: '[data-tour="editor"]',
+    title: 'Monaco Code Editor',
+    description: 'Ruang kerja utama tempat kamu menulis kode. Mendukung multi-tab file, sintaks JavaScript/HTML/CSS, dan auto-save ke WebContainer.',
+    position: 'left'
+  },
+  {
+    target: '[data-tour="terminal"]',
+    title: 'Terminal Interaktif WebContainer',
+    description: 'Terminal sungguhan yang bisa menjalankan command "cd", "node app.js", "npm install", dan tombol Push untuk commit ke GitHub.',
+    position: 'top'
   }
 ];
 
 export default function OnboardingTour({ isOpen, onClose }) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [animate, setAnimate] = useState(false);
+  const [rect, setRect] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
-      setAnimate(true);
-    }
-  }, [isOpen, currentStep]);
+    if (!isOpen) return;
+
+    const updateTargetRect = () => {
+      const step = STEPS[currentStep];
+      const el = document.querySelector(step.target);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setRect({
+          top: r.top,
+          left: r.left,
+          width: r.width,
+          height: r.height
+        });
+      } else {
+        setRect(null);
+      }
+    };
+
+    updateTargetRect();
+    window.addEventListener('resize', updateTargetRect);
+    window.addEventListener('scroll', updateTargetRect, true);
+
+    return () => {
+      window.removeEventListener('resize', updateTargetRect);
+      window.removeEventListener('scroll', updateTargetRect, true);
+    };
+  }, [currentStep, isOpen]);
 
   if (!isOpen) return null;
 
-  const step = TOUR_STEPS[currentStep];
-  const isLastStep = currentStep === TOUR_STEPS.length - 1;
+  const step = STEPS[currentStep];
 
   const handleNext = () => {
-    setAnimate(false);
-    setTimeout(() => {
-      if (isLastStep) {
-        onClose();
-        setCurrentStep(0);
-      } else {
-        setCurrentStep(prev => prev + 1);
-      }
-    }, 150);
+    if (currentStep < STEPS.length - 1) {
+      setCurrentStep((prev) => prev + 1);
+    } else {
+      onClose();
+    }
   };
 
   const handlePrev = () => {
     if (currentStep > 0) {
-      setAnimate(false);
-      setTimeout(() => setCurrentStep(prev => prev - 1), 150);
+      setCurrentStep((prev) => prev - 1);
     }
   };
 
+  const getCardStyle = () => {
+    if (!rect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+
+    const space = 16;
+    let style = {};
+
+    if (step.position === 'bottom') {
+      style = {
+        top: `${rect.top + rect.height + space}px`,
+        left: `${Math.max(16, rect.left)}px`
+      };
+    } else if (step.position === 'top') {
+      style = {
+        bottom: `${window.innerHeight - rect.top + space}px`,
+        left: `${Math.max(16, rect.left)}px`
+      };
+    } else if (step.position === 'right') {
+      style = {
+        top: `${Math.max(16, rect.top)}px`,
+        left: `${rect.left + rect.width + space}px`
+      };
+    } else if (step.position === 'left') {
+      style = {
+        top: `${Math.max(16, rect.top)}px`,
+        right: `${window.innerWidth - rect.left + space}px`
+      };
+    }
+
+    return style;
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs select-none">
-      {/* ANIMATED TOOLTIP CARD */}
-      <div 
-        className={`w-full max-w-sm bg-[#161b22] border border-[#58a6ff]/40 rounded-lg p-5 shadow-2xl transition-all duration-300 transform ${
-          animate ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-2'
-        }`}
+    <div className="fixed inset-0 z-[9999] overflow-hidden select-none font-sans">
+      {/* SPOTLIGHT FOCUS RING */}
+      {rect && (
+        <div
+          className="fixed pointer-events-none z-[10000] transition-all duration-300 ease-out border-2 border-[#58a6ff] rounded-md shadow-[0_0_0_9999px_rgba(13,17,23,0.85)]"
+          style={{
+            top: `${rect.top - 4}px`,
+            left: `${rect.left - 4}px`,
+            width: `${rect.width + 8}px`,
+            height: `${rect.height + 8}px`
+          }}
+        />
+      )}
+
+      {/* FLOATING TOOLTIP CARD */}
+      <div
+        style={getCardStyle()}
+        className="fixed z-[10001] w-80 bg-[#161b22] border border-[#30363d] p-4 rounded-lg shadow-2xl transition-all duration-300 ease-out flex flex-col gap-3"
       >
-        {/* HEADER */}
-        <div className="flex justify-between items-center border-b border-[#30363d] pb-3 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#58a6ff] animate-ping" />
-            <span className="text-xs font-mono font-semibold text-[#58a6ff]">
-              PANDUAN INTERAKTIF ({currentStep + 1}/{TOUR_STEPS.length})
-            </span>
-          </div>
-          <button 
+        <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
+          <span className="text-xs font-semibold text-[#58a6ff] uppercase tracking-wider font-mono">
+            Langkah {currentStep + 1} dari {STEPS.length}
+          </span>
+          <button
             onClick={onClose}
-            className="text-[#8b949e] hover:text-white text-xs font-mono cursor-pointer"
+            className="text-[#8b949e] hover:text-white text-xs px-1 cursor-pointer"
+            title="Tutup Petunjuk"
           >
-            Skip Tour ✕
+            ✕
           </button>
         </div>
 
-        {/* CONTENT */}
-        <div className="space-y-2 mb-5">
-          <h3 className="text-sm font-bold text-white">{step.title}</h3>
+        <div>
+          <h4 className="text-sm font-bold text-white mb-1">{step.title}</h4>
           <p className="text-xs text-[#c9d1d9] leading-relaxed">{step.description}</p>
         </div>
 
-        {/* STEP PROGRESS INDICATOR DOTS */}
         <div className="flex items-center justify-between pt-2 border-t border-[#30363d]/60">
-          <div className="flex items-center gap-1.5">
-            {TOUR_STEPS.map((_, idx) => (
-              <span 
-                key={idx}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  idx === currentStep ? 'w-5 bg-[#58a6ff]' : 'w-1.5 bg-[#30363d]'
-                }`}
-              />
-            ))}
-          </div>
+          <button
+            onClick={onClose}
+            className="text-xs text-[#8b949e] hover:text-white cursor-pointer"
+          >
+            Lewati Tour
+          </button>
 
-          {/* CONTROLS */}
           <div className="flex items-center gap-2">
             {currentStep > 0 && (
-              <button 
+              <button
                 onClick={handlePrev}
-                className="bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs px-3 py-1.5 rounded border border-[#30363d] font-mono cursor-pointer transition-colors"
+                className="px-2.5 py-1 rounded text-xs text-[#c9d1d9] bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] cursor-pointer"
               >
                 Kembali
               </button>
             )}
-            <button 
+            <button
               onClick={handleNext}
-              className="bg-[#238636] hover:bg-[#2ea043] text-white text-xs px-3 py-1.5 rounded font-mono font-medium cursor-pointer transition-colors shadow-sm"
+              className="px-3 py-1 rounded text-xs text-white bg-[#238636] hover:bg-[#2ea043] font-semibold cursor-pointer"
             >
-              {isLastStep ? 'Mulai Koding 🚀' : 'Lanjut →'}
+              {currentStep === STEPS.length - 1 ? 'Selesai' : 'Lanjut'}
             </button>
           </div>
         </div>

@@ -16,10 +16,11 @@ import {
   verifyCurriculumStatus,
 } from "../utils/github";
 import { CURRICULUM_DATA, MENTOR_ORG } from "../data/curriculumData";
+import { resolvePath } from "../utils/treeUtils";
 
 import CurriculumDashboard from "../components/CurriculumDashboard";
 import WorkspaceHeader from "../components/WorkspaceHeader";
-import MaterialPanel from "../components/MaterialPanel";
+import SidebarPanel from "../components/SidebarPanel";
 import CodeEditorPanel from "../components/CodeEditorPanel";
 import Modals from "../components/Modals";
 import LoginPage from "../components/LoginPage";
@@ -35,14 +36,16 @@ function Workspace() {
   const webcontainerRef = useRef(null);
   const [isContainerReady, setIsContainerReady] = useState(false);
   const [activePortUrl, setActivePortUrl] = useState(null);
+  const [cwd, setCwd] = useState("/");
 
-  const [showMaterial, setShowMaterial] = useState(true);
+  // Layout Panels State
+  const [sidebarTab, setSidebarTab] = useState("explorer");
+  const [showSidebar, setShowSidebar] = useState(true);
   const [showEditor, setShowEditor] = useState(true);
   const [showTerminal, setShowTerminal] = useState(true);
-  const [isMaterialMaximized, setIsMaterialMaximized] = useState(false);
   const [isEditorMaximized, setIsEditorMaximized] = useState(false);
 
-  const [leftWidth, setLeftWidth] = useState(40);
+  const [sidebarWidth, setSidebarWidth] = useState(25);
   const [isDraggingWidth, setIsDraggingWidth] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(200);
   const [isDraggingTerminal, setIsDraggingTerminal] = useState(false);
@@ -76,18 +79,39 @@ function Workspace() {
   const [commitMessageInput, setCommitMessageInput] = useState("");
   const [showPRModal, setShowPRModal] = useState(false);
   const [prNoteInput, setPrNoteInput] = useState("");
+
   const [showCreateFileModal, setShowCreateFileModal] = useState(false);
   const [newFilePathInput, setNewFilePathInput] = useState("");
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderPathInput, setNewFolderPathInput] = useState("");
+  const [targetFolderContext, setTargetFolderContext] = useState("");
+
+  // STATE ONBOARDING TOUR (DEFAULT FALSE)
   const [isTourOpen, setIsTourOpen] = useState(false);
 
   const [isLoadingMaterial, setIsLoadingMaterial] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [isPullRequesting, setIsPullRequesting] = useState(false);
 
+  const saveTimeoutRef = useRef(null);
+
   const showToastNotification = (message, type = "info") =>
     setToast({ message, type });
+
   const appendTerminalOutput = (type, text) =>
     setTerminalOutput((prev) => [...prev, { type, text }]);
+
+  const fixMarkdownImageUrls = (content, owner, repo) => {
+    if (!content) return "";
+    const rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/`;
+    return content.replace(
+      /!\[(.*?)\]\(((?!\/|http).+?)\)/g,
+      (match, alt, src) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `![${alt}](${rawBaseUrl}${cleanSrc})`;
+      },
+    );
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -115,6 +139,7 @@ function Workspace() {
     };
   }, []);
 
+  // CEK TOUR DASHBOARD (HANYA MUNCUL 1X SAAT LOGIN PERTAMA KALI)
   useEffect(() => {
     if (
       session?.accessToken &&
@@ -122,24 +147,44 @@ function Workspace() {
       !hasInitialSyncedRef.current
     ) {
       hasInitialSyncedRef.current = true;
-      loadUserReposList();
+      loadStatusFromDatabase();
 
-      const hasSeenTour = localStorage.getItem(
-        `gittask_tour_${session.user.name.toLowerCase()}`,
-      );
-      if (!hasSeenTour) {
+      const dashboardTourKey = `gittask_tour_dashboard_${session.user.name.toLowerCase()}`;
+      const hasSeenDashboardTour = localStorage.getItem(dashboardTourKey);
+
+      if (!hasSeenDashboardTour) {
         setIsTourOpen(true);
-        localStorage.setItem(
-          `gittask_tour_${session.user.name.toLowerCase()}`,
-          "true",
-        );
+        localStorage.setItem(dashboardTourKey, "true");
       }
     }
   }, [session]);
 
-  const loadUserReposList = async () => {
+  const loadStatusFromDatabase = async () => {
+    setIsLoadingRepos(true);
+    try {
+      const res = await fetch("/api/user/status");
+      const data = await res.json();
+
+      if (
+        data.success &&
+        data.statusMap &&
+        Object.keys(data.statusMap).length > 0
+      ) {
+        setStatusMap(data.statusMap);
+        setIsLoadingRepos(false);
+      } else {
+        await syncWithGitHubAndSave();
+      }
+    } catch (err) {
+      console.error("Gagal membaca dari Supabase:", err);
+      await syncWithGitHubAndSave();
+    }
+  };
+
+  const syncWithGitHubAndSave = async () => {
     if (!session?.accessToken || !session?.user?.name) return;
     setIsLoadingRepos(true);
+    showToastNotification("Menyingkronkan data dengan GitHub…", "info");
 
     const userReposRes = await getUserRepos(session.accessToken);
     const userRepos = userReposRes.repos || [];
@@ -158,6 +203,20 @@ function Workspace() {
 
     setStatusMap(verifiedMap);
     setIsLoadingRepos(false);
+
+    try {
+      await fetch("/api/user/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statusMap: verifiedMap }),
+      });
+      showToastNotification(
+        "Status kurikulum tersimpan di Supabase!",
+        "success",
+      );
+    } catch (err) {
+      console.error("Gagal menyimpan ke Supabase:", err);
+    }
   };
 
   useEffect(() => {
@@ -176,21 +235,23 @@ function Workspace() {
     const handleMouseMove = (e) => {
       if (isDraggingWidth) {
         const newWidth = (e.clientX / window.innerWidth) * 100;
-        if (newWidth > 15 && newWidth < 85) setLeftWidth(newWidth);
+        if (newWidth > 15 && newWidth < 50) setSidebarWidth(newWidth);
       }
       if (isDraggingTerminal) {
-        const calculatedHeight = window.innerHeight - e.clientY - 24;
+        const calculatedHeight = window.innerHeight - e.clientY - 32;
         if (
-          calculatedHeight >= 50 &&
-          calculatedHeight <= window.innerHeight - 100
+          calculatedHeight >= 60 &&
+          calculatedHeight <= window.innerHeight - 120
         )
           setTerminalHeight(calculatedHeight);
       }
     };
+
     const handleMouseUp = () => {
       setIsDraggingWidth(false);
       setIsDraggingTerminal(false);
     };
+
     if (isDraggingWidth || isDraggingTerminal) {
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
@@ -247,9 +308,21 @@ function Workspace() {
     const repoName = overrideRepoName || weekItem.repoName;
     setSelectedRepo(repoName);
     setCurrentView("workspace");
+    setCwd("/");
+
+    // CEK TOUR WORKSPACE (HANYA MUNCUL 1X SAAT PERTAMA KALI MASUK REPO WORKSPACE)
+    const workspaceTourKey = `gittask_tour_workspace_${session?.user?.name?.toLowerCase()}`;
+    const hasSeenWorkspaceTour = localStorage.getItem(workspaceTourKey);
+
+    if (!hasSeenWorkspaceTour) {
+      setIsTourOpen(true);
+      localStorage.setItem(workspaceTourKey, "true");
+    } else {
+      setIsTourOpen(false);
+    }
 
     const targetOwner = readOnlyMode ? MENTOR_ORG : session.user.name;
-    showToastNotification(`Memuat repo ${targetOwner}/${repoName}...`, "info");
+    showToastNotification(`Memuat repo ${targetOwner}/${repoName}…`, "info");
 
     const treeRes = await fetchRepoTree(
       session.accessToken,
@@ -267,26 +340,31 @@ function Workspace() {
         setMaterialText("# Readme belum tersedia.");
       }
 
+      setQuizzesList(treeRes.quizzes || []);
+
       const loadedFilesMap = {};
-      if (treeRes.quizzes.length > 0) {
-        for (const quiz of treeRes.quizzes) {
-          const fileRes = await fetchFileContent(
-            session.accessToken,
-            targetOwner,
-            repoName,
-            quiz.path,
-          );
-          if (fileRes.success) loadedFilesMap[quiz.path] = fileRes.content;
-        }
-        setQuizzesList(treeRes.quizzes);
-      } else {
-        setQuizzesList([]);
+      if (treeRes.quizzes && treeRes.quizzes.length > 0) {
+        await Promise.all(
+          treeRes.quizzes.map(async (quiz) => {
+            const fileRes = await fetchFileContent(
+              session.accessToken,
+              targetOwner,
+              repoName,
+              quiz.path,
+            );
+            if (fileRes.success) loadedFilesMap[quiz.path] = fileRes.content;
+          }),
+        );
       }
 
       setFilesContentMap(loadedFilesMap);
-      const firstFilePath = Object.keys(loadedFilesMap)[0] || "";
-      setOpenFiles(firstFilePath ? [firstFilePath] : []);
-      setActiveFilePath(firstFilePath || "");
+      const firstFilePath =
+        treeRes.quizzes[0]?.path || Object.keys(loadedFilesMap)[0] || "";
+
+      if (firstFilePath) {
+        setOpenFiles([firstFilePath]);
+        setActiveFilePath(firstFilePath);
+      }
 
       if (webcontainerRef.current && Object.keys(loadedFilesMap).length > 0) {
         try {
@@ -313,7 +391,10 @@ function Workspace() {
       repoName,
       path,
     );
-    if (res.success) setMaterialText(res.content);
+    if (res.success) {
+      const processedText = fixMarkdownImageUrls(res.content, owner, repoName);
+      setMaterialText(processedText);
+    }
     setIsLoadingMaterial(false);
   };
 
@@ -323,60 +404,120 @@ function Workspace() {
     loadMaterial(owner, selectedRepo, path);
   };
 
+  const openCreateFileModal = (targetFolder = "") => {
+    setTargetFolderContext(targetFolder);
+    setNewFilePathInput("");
+    setShowCreateFileModal(true);
+  };
+
+  const openCreateFolderModal = (targetFolder = "") => {
+    setTargetFolderContext(targetFolder);
+    setNewFolderPathInput("");
+    setShowCreateFolderModal(true);
+  };
+
   const handleCreateFileSubmit = async (e) => {
     e.preventDefault();
-    if (isReadOnly) {
-      showToastNotification(
-        "Read-Only mode tidak dapat membuat file.",
-        "error",
-      );
+    if (isReadOnly) return;
+
+    let cleanInput = newFilePathInput.trim().replace(/^\//, "");
+    if (!cleanInput) return;
+
+    const fullPath = targetFolderContext
+      ? `${targetFolderContext}/${cleanInput}`
+      : cleanInput;
+
+    if (filesContentMap[fullPath] !== undefined) {
+      showToastNotification(`File '${fullPath}' sudah ada.`, "error");
       return;
     }
-    const cleanPath = newFilePathInput.trim();
-    if (!cleanPath) return;
 
-    if (filesContentMap[cleanPath] !== undefined) {
-      showToastNotification(`File ${cleanPath} sudah ada.`, "error");
-      return;
-    }
-
-    const defaultContent = cleanPath.endsWith(".json")
+    const defaultContent = fullPath.endsWith(".json")
       ? "{\n  \n}"
       : "// JavaScript File\n";
-    setFilesContentMap((prev) => ({ ...prev, [cleanPath]: defaultContent }));
-    setQuizzesList((prev) => [...prev, { path: cleanPath, label: cleanPath }]);
+    setFilesContentMap((prev) => ({ ...prev, [fullPath]: defaultContent }));
+    setQuizzesList((prev) => [...prev, { path: fullPath, label: fullPath }]);
 
     if (webcontainerRef.current) {
       try {
-        if (cleanPath.includes("/")) {
-          const dirPath = cleanPath.substring(0, cleanPath.lastIndexOf("/"));
+        if (fullPath.includes("/")) {
+          const dirPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
           await webcontainerRef.current.fs.mkdir(dirPath, { recursive: true });
         }
-        await webcontainerRef.current.fs.writeFile(cleanPath, defaultContent);
+        await webcontainerRef.current.fs.writeFile(fullPath, defaultContent);
       } catch (err) {
         showToastNotification(`FS Error: ${err.message}`, "error");
       }
     }
 
-    openFileTab(cleanPath);
+    openFileTab(fullPath);
     setShowCreateFileModal(false);
     setNewFilePathInput("");
-    showToastNotification(`File '${cleanPath}' dibuat.`, "success");
+    showToastNotification(`File '${fullPath}' dibuat.`, "success");
   };
 
-  const handleCodeChange = async (newContent) => {
-    const content = newContent || "";
-    setFilesContentMap((prev) => ({ ...prev, [activeFilePath]: content }));
-    if (webcontainerRef.current && activeFilePath) {
+  const handleCreateFolderSubmit = async (e) => {
+    e.preventDefault();
+    if (isReadOnly) return;
+
+    let cleanInput = newFolderPathInput
+      .trim()
+      .replace(/^\//, "")
+      .replace(/\/$/, "");
+    if (!cleanInput) return;
+
+    const fullFolder = targetFolderContext
+      ? `${targetFolderContext}/${cleanInput}`
+      : cleanInput;
+
+    const gitkeepPath = `${fullFolder}/.gitkeep`;
+
+    if (filesContentMap[gitkeepPath] !== undefined) {
+      showToastNotification(`Folder '${fullFolder}' sudah ada.`, "error");
+      return;
+    }
+
+    setFilesContentMap((prev) => ({ ...prev, [gitkeepPath]: "" }));
+    setQuizzesList((prev) => [
+      ...prev,
+      { path: gitkeepPath, label: gitkeepPath },
+    ]);
+
+    if (webcontainerRef.current) {
       try {
-        await webcontainerRef.current.fs.writeFile(activeFilePath, content);
+        await webcontainerRef.current.fs.mkdir(fullFolder, { recursive: true });
+        await webcontainerRef.current.fs.writeFile(gitkeepPath, "");
       } catch (err) {
-        console.error("File sync error:", err);
+        showToastNotification(`FS Error: ${err.message}`, "error");
       }
     }
+
+    setShowCreateFolderModal(false);
+    setNewFolderPathInput("");
+    showToastNotification(`Folder '${fullFolder}' dibuat.`, "success");
+  };
+
+  const handleCodeChange = (newContent) => {
+    const content = newContent || "";
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      setFilesContentMap((prev) => ({ ...prev, [activeFilePath]: content }));
+      if (webcontainerRef.current && activeFilePath) {
+        try {
+          await webcontainerRef.current.fs.writeFile(activeFilePath, content);
+        } catch (err) {
+          console.error("File sync error:", err);
+        }
+      }
+    }, 300);
   };
 
   const openFileTab = (path) => {
+    if (path.endsWith(".gitkeep")) return;
     if (!openFiles.includes(path)) setOpenFiles([...openFiles, path]);
     setActiveFilePath(path);
   };
@@ -391,21 +532,46 @@ function Workspace() {
 
   const executeContainerCommand = async (commandLine) => {
     if (!webcontainerRef.current || !isContainerReady) {
-      showToastNotification("WebContainer engine belum siap...", "info");
+      showToastNotification("WebContainer engine belum siap…", "info");
       return;
     }
-    const args = commandLine.trim().split(/\s+/);
-    const cmd = args.shift();
-    if (!cmd) return;
 
-    appendTerminalOutput("command", `$ ${commandLine}`);
+    const rawTrimmed = commandLine.trim();
+    if (!rawTrimmed) return;
+
+    appendTerminalOutput("command", `$ ${rawTrimmed}`);
+
+    const args = rawTrimmed.split(/\s+/);
+    const cmd = args.shift();
+
     if (cmd === "clear" || cmd === "cls") {
       setTerminalOutput([]);
       return;
     }
 
+    if (cmd === "cd") {
+      const targetDir = args[0] || "/";
+      const resolved = resolvePath(cwd, targetDir);
+
+      try {
+        const checkPath = resolved === "/" ? "." : resolved.replace(/^\//, "");
+        await webcontainerRef.current.fs.readdir(checkPath);
+        setCwd(resolved);
+      } catch (err) {
+        appendTerminalOutput(
+          "error",
+          `bash: cd: ${targetDir}: No such file or directory`,
+        );
+      }
+      return;
+    }
+
     try {
-      const process = await webcontainerRef.current.spawn(cmd, args);
+      const spawnCwd = cwd === "/" ? "." : cwd.replace(/^\//, "");
+      const process = await webcontainerRef.current.spawn(cmd, args, {
+        cwd: spawnCwd,
+      });
+
       process.output.pipeTo(
         new WritableStream({
           write(data) {
@@ -468,7 +634,7 @@ function Workspace() {
     setShowPushModal(false);
     setIsPushing(true);
     const msg = commitMessageInput.trim() || `update ${activeFilePath}`;
-    showToastNotification(`Pushing commit "${msg}"...`, "info");
+    showToastNotification(`Pushing commit "${msg}"…`, "info");
     try {
       const codeToPush = filesContentMap[activeFilePath] || "";
       const pushResult = await pushCodeToGitHub(
@@ -498,7 +664,7 @@ function Workspace() {
     }
     setShowPRModal(false);
     setIsPullRequesting(true);
-    showToastNotification("Mengirim Pull Request...", "info");
+    showToastNotification("Mengirim Pull Request…", "info");
     try {
       const prResult = await createPullRequest(
         session.accessToken,
@@ -525,135 +691,148 @@ function Workspace() {
     return <LoginPage />;
   }
 
-  if (currentView === "dashboard") {
-    return (
-      <CurriculumDashboard
-        session={session}
-        statusMap={statusMap}
-        isLoadingRepos={isLoadingRepos}
-        onSelectWeekRepo={handleSelectWeekRepo}
-        onRefreshRepos={loadUserReposList}
-      />
-    );
-  }
-
   const isAnyDragging = isDraggingWidth || isDraggingTerminal;
 
   return (
     <div
-      className={`flex flex-col h-screen bg-[#0d1117] text-[#c9d1d9] font-sans ${isAnyDragging ? "select-none" : ""}`}
+      className={`flex flex-col h-screen bg-[#0d1117] text-[#c9d1d9] font-sans ${
+        isAnyDragging ? "select-none" : ""
+      }`}
     >
       {isAnyDragging && (
         <div
-          className={`fixed inset-0 z-50 ${isDraggingWidth ? "cursor-col-resize" : "cursor-row-resize"}`}
+          className={`fixed inset-0 z-[9999] bg-transparent ${
+            isDraggingWidth ? "cursor-col-resize" : "cursor-row-resize"
+          }`}
         />
       )}
 
       {toast && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2.5 bg-[#161b22] border border-[#30363d] text-xs px-3.5 py-2 rounded-md shadow-2xl select-none">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2.5 bg-[#161b22] border border-[#30363d] text-xs px-3.5 py-2.5 rounded-md shadow-2xl select-none">
           <span
-            className={`w-2 h-2 rounded-full ${toast.type === "error" ? "bg-[#f85149]" : toast.type === "success" ? "bg-[#3fb950]" : "bg-[#58a6ff]"}`}
+            className={`w-2 h-2 rounded-full ${
+              toast.type === "error"
+                ? "bg-[#f85149]"
+                : toast.type === "success"
+                  ? "bg-[#3fb950]"
+                  : "bg-[#58a6ff]"
+            }`}
           />
           <span className="text-white font-medium">{toast.message}</span>
           <button
             onClick={() => setToast(null)}
-            className="text-[#8b949e] hover:text-white ml-2 cursor-pointer"
+            className="text-[#8b949e] hover:text-white ml-2 cursor-pointer transition-colors"
           >
             ✕
           </button>
         </div>
       )}
 
-      <WorkspaceHeader
-        selectedWeekInfo={selectedWeekInfo}
-        selectedRepo={selectedRepo}
-        isReadOnly={isReadOnly}
-        activePortUrl={activePortUrl}
-        isPullRequesting={isPullRequesting}
-        onBackToCurriculum={() => setCurrentView("dashboard")}
-        onOpenPRModal={() => setShowPRModal(true)}
-        session={session}
-        showMaterial={showMaterial}
-        setShowMaterial={setShowMaterial}
-        showEditor={showEditor}
-        setShowEditor={setShowEditor}
-        showTerminal={showTerminal}
-        setShowTerminal={setShowTerminal}
-      />
-
-      <div className="flex flex-col md:flex-row flex-grow overflow-hidden relative">
-        {showMaterial && !isEditorMaximized && (
-          <MaterialPanel
-            width={leftWidth}
-            showEditor={showEditor}
-            isMaterialMaximized={isMaterialMaximized}
-            selectedMaterialPath={selectedMaterialPath}
-            onSelectMaterial={handleSelectMaterial}
-            materialsList={materialsList}
-            isLoadingMaterial={isLoadingMaterial}
-            materialText={materialText}
-            filesContentMap={filesContentMap}
-            session={session}
+      {/* DASHBOARD VS WORKSPACE VIEW */}
+      {currentView === "dashboard" ? (
+        <CurriculumDashboard
+          session={session}
+          statusMap={statusMap}
+          isLoadingRepos={isLoadingRepos}
+          onSelectWeekRepo={handleSelectWeekRepo}
+          onRefreshRepos={syncWithGitHubAndSave}
+        />
+      ) : (
+        <>
+          <WorkspaceHeader
+            selectedWeekInfo={selectedWeekInfo}
             selectedRepo={selectedRepo}
-            openFileTab={openFileTab}
-            setPreviewImage={setPreviewImage}
             isReadOnly={isReadOnly}
-            setShowMaterial={setShowMaterial}
-            onDeleteFile={handleDeleteFile}
-          />
-        )}
-
-        {showMaterial &&
-          showEditor &&
-          !isMaterialMaximized &&
-          !isEditorMaximized && (
-            <div
-              onMouseDown={() => setIsDraggingWidth(true)}
-              className="hidden md:block w-1 bg-[#161b22] hover:bg-[#58a6ff] cursor-col-resize z-10"
-            />
-          )}
-
-        {showEditor && !isMaterialMaximized && (
-          <CodeEditorPanel
-            width={leftWidth}
-            showMaterial={showMaterial}
-            isEditorMaximized={isEditorMaximized}
-            setIsEditorMaximized={setIsEditorMaximized}
-            setIsMaterialMaximized={setIsMaterialMaximized}
+            activePortUrl={activePortUrl}
+            isPullRequesting={isPullRequesting}
+            onBackToCurriculum={() => {
+              setCurrentView("dashboard");
+              setIsTourOpen(false);
+            }}
+            onOpenPRModal={() => setShowPRModal(true)}
+            session={session}
+            showMaterial={showSidebar}
+            setShowMaterial={setShowSidebar}
+            showEditor={showEditor}
             setShowEditor={setShowEditor}
-            openFiles={openFiles}
-            activeFilePath={activeFilePath}
-            setActiveFilePath={setActiveFilePath}
-            closeFileTab={closeFileTab}
-            openFileTab={openFileTab}
-            quizzesList={quizzesList}
-            filesContentMap={filesContentMap}
-            handleCodeChange={handleCodeChange}
-            setShowCreateFileModal={setShowCreateFileModal}
             showTerminal={showTerminal}
-            setIsDraggingTerminal={setIsDraggingTerminal}
-            executeContainerCommand={executeContainerCommand}
-            isPushing={isPushing}
-            setShowPushModal={setShowPushModal}
-            terminalHeight={terminalHeight}
-            terminalOutput={terminalOutput}
-            terminalBottomRef={terminalBottomRef}
-            handleTerminalSubmit={handleTerminalSubmit}
-            terminalInput={terminalInput}
-            setTerminalInput={setTerminalInput}
-            handleKeyDownTerminal={handleKeyDownTerminal}
-            isReadOnly={isReadOnly}
-            onDeleteFile={handleDeleteFile}
+            setShowTerminal={setShowTerminal}
           />
-        )}
-      </div>
 
+          <div className="flex flex-1 overflow-hidden relative">
+            {showSidebar && !isEditorMaximized && (
+              <SidebarPanel
+                activeTab={sidebarTab}
+                setActiveTab={setSidebarTab}
+                width={sidebarWidth}
+                filesContentMap={filesContentMap}
+                activeFilePath={activeFilePath}
+                openFileTab={openFileTab}
+                onDeleteFile={handleDeleteFile}
+                onOpenCreateFileModal={openCreateFileModal}
+                onOpenCreateFolderModal={openCreateFolderModal}
+                isReadOnly={isReadOnly}
+                materialsList={materialsList}
+                quizzesList={quizzesList}
+                selectedMaterialPath={selectedMaterialPath}
+                onSelectMaterial={handleSelectMaterial}
+                isLoadingMaterial={isLoadingMaterial}
+                materialText={materialText}
+                session={session}
+                selectedRepo={selectedRepo}
+                setPreviewImage={setPreviewImage}
+              />
+            )}
+
+            {showSidebar && !isEditorMaximized && (
+              <div
+                onMouseDown={() => setIsDraggingWidth(true)}
+                className="w-1 bg-[#161b22] hover:bg-[#58a6ff] cursor-col-resize z-10 shrink-0 transition-colors"
+              />
+            )}
+
+            <CodeEditorPanel
+              isEditorMaximized={isEditorMaximized}
+              setIsEditorMaximized={setIsEditorMaximized}
+              openFiles={openFiles}
+              activeFilePath={activeFilePath}
+              setActiveFilePath={setActiveFilePath}
+              closeFileTab={closeFileTab}
+              filesContentMap={filesContentMap}
+              handleCodeChange={handleCodeChange}
+              showTerminal={showTerminal}
+              setIsDraggingTerminal={setIsDraggingTerminal}
+              executeContainerCommand={executeContainerCommand}
+              isPushing={isPushing}
+              setShowPushModal={setShowPushModal}
+              terminalHeight={terminalHeight}
+              terminalOutput={terminalOutput}
+              terminalBottomRef={terminalBottomRef}
+              handleTerminalSubmit={handleTerminalSubmit}
+              setTerminalInput={setTerminalInput}
+              terminalInput={terminalInput}
+              handleKeyDownTerminal={handleKeyDownTerminal}
+              isReadOnly={isReadOnly}
+              isContainerReady={isContainerReady}
+              cwd={cwd}
+            />
+          </div>
+        </>
+      )}
+
+      {/* MODALS */}
       <Modals
         showCreateFileModal={showCreateFileModal}
         setShowCreateFileModal={setShowCreateFileModal}
         newFilePathInput={newFilePathInput}
         setNewFilePathInput={setNewFilePathInput}
         handleCreateFileSubmit={handleCreateFileSubmit}
+        showCreateFolderModal={showCreateFolderModal}
+        setShowCreateFolderModal={setShowCreateFolderModal}
+        newFolderPathInput={newFolderPathInput}
+        setNewFolderPathInput={setNewFolderPathInput}
+        handleCreateFolderSubmit={handleCreateFolderSubmit}
+        targetFolderContext={targetFolderContext}
         showPushModal={showPushModal}
         setShowPushModal={setShowPushModal}
         activeFilePath={activeFilePath}
@@ -669,9 +848,11 @@ function Workspace() {
         setPreviewImage={setPreviewImage}
       />
 
+      {/* ONBOARDING TOUR */}
       <OnboardingTour
         isOpen={isTourOpen}
         onClose={() => setIsTourOpen(false)}
+        currentView={currentView}
       />
     </div>
   );

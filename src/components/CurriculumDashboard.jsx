@@ -8,7 +8,7 @@ export default function CurriculumDashboard({ session, statusMap, isLoadingRepos
   return (
     <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-sans flex flex-col select-none">
       {/* HEADER BAR */}
-      <header className="h-14 bg-[#161b22] border-b border-[#30363d] px-6 flex items-center justify-between sticky top-0 z-30">
+      <header data-tour="dashboard-header" className="h-14 bg-[#161b22] border-b border-[#30363d] px-6 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
           <img src="/favicon.ico" alt="Favicon ETHJKT" className="w-5 h-5 object-contain" />
           <span className="font-semibold text-white text-sm tracking-tight">ETHJKT</span>
@@ -44,13 +44,12 @@ export default function CurriculumDashboard({ session, statusMap, isLoadingRepos
 
       {/* MAIN CONTENT */}
       <main className="flex-grow max-w-6xl w-full mx-auto p-6 space-y-6">
-        <div className="border-b border-[#30363d] pb-4">
+        <div data-tour="dashboard-progress" className="border-b border-[#30363d] pb-4">
           <h1 className="text-lg font-bold text-white">ETHJKT Modul Pembelajaran</h1>
-          {/* <p className="text-xs text-[#8b949e] mt-0.5">Pilih modul tugas untuk mulai mengerjakan di IDE atau meninjau repository mentor.</p> */}
         </div>
 
         {/* MODUL KURIKULUM */}
-        <div className="space-y-8">
+        <div data-tour="dashboard-curriculum" className="space-y-8">
           {CURRICULUM_DATA.map((phaseGroup, idx) => (
             <section key={idx} className="space-y-3">
               <div className="flex items-center justify-between border-b border-[#30363d]/60 pb-2">
